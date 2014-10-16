@@ -26,9 +26,6 @@ module Toshi
     # If true, prints out details of validation failures
     attr_accessor :verbose_logging
 
-    # Message queue interface
-    attr_accessor :mq
-
     # Encapsulated all interesting info about a validation error to debug or punish the peer for DoS attempt.
     # Aka CValidationState in bitcoind.
     class ValidationState
@@ -63,8 +60,6 @@ module Toshi
 
       @trace_execution_steps_counter = 0
       @measurements = {}
-
-      @mq = RedisMQ::Channel.new(:worker)
 
       if Bitcoin.network_name == :testnet3
         @debug_skip_proof_of_work_check = true
@@ -136,18 +131,12 @@ module Toshi
 
     # FIXME: bitcoind won't relay inventory to peers that are known to already have it.
     def relay_transaction_to_peers(tx)
-      # this is for peers
-      @mq.workers_push_all({ 'msg' => 'relay_tx', 'hash' => tx.hash })
-      # this is for websocket consumers
-      @mq.clients_push_all({ 'msg' => 'new_transaction', 'hash' => tx.hash })
+      Toshi::Workers::RelayWorker.perform_async('tx', tx.hash)
     end
 
     # FIXME: bitcoind won't relay inventory to peers that are known to already have it.
     def relay_block_to_peers(block)
-      # this is for peers
-      @mq.workers_push_all({ 'msg' => 'relay_block', 'hash' => block.hash })
-      # this is for websocket consumers
-      @mq.clients_push_all({ 'msg' => 'new_block', 'hash' => block.hash })
+      Toshi::Workers::RelayWorker.perform_async('block', block.hash)
     end
 
     # Returns true if transaction is valid if included in the next block.
